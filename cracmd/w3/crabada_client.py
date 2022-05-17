@@ -2,8 +2,9 @@ import os
 import json
 import logging
 
-from web3.types import TxParams
+from web3.types import TxParams, Wei
 from eth_typing.encoding import HexStr
+from eth_typing import Address
 
 
 from .web3_client import Web3Client
@@ -34,6 +35,29 @@ class CrabadaClient(Web3Client):
             txParams: TxParams = self.buildContractTransaction(
                 self.contract.functions.removeCrabadaFromTeam(teamId, position)
             )
+            logger.debug(f"TxParams: {txParams}")
+
+            txHash = self.signAndSendTransaction(txParams)
+            logger.info(f"txHash: {txHash}")
+
+            txReceipt = self.getTransactionReceipt(txHash=txHash)
+            logger.debug(f"txReceipt: {txReceipt}")
+
+            return txReceipt["status"] == 1
+        except:
+            logger.exception("removeCrabadaFromTeam error!")
+            return False
+
+    def sendEth(
+        self,
+        to: Address,
+        valueInEth: float,
+    ) -> HexStr:
+        """
+        Send TUS to the given address
+        """
+        try:
+            txParams: TxParams = self.buildTransactionWithValue(to, valueInEth)
             logger.debug(f"TxParams: {txParams}")
 
             txHash = self.signAndSendTransaction(txParams)

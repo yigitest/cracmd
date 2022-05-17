@@ -24,10 +24,14 @@ def main():
     )
 
     remove_from_team = subparsers.add_parser(
-        "remove-from-team", help="remove-from-team help"
+        "remove-from-team", help="remove-from-team -h for details"
     )
     remove_from_team.add_argument("teamId", type=int, help="teamId, positional")
     remove_from_team.add_argument("position", type=int, help="teamId, positional")
+
+    send_tus = subparsers.add_parser("send-tus", help="see send-tus -h for details")
+    send_tus.add_argument("to", type=str, help="to address, positional")
+    send_tus.add_argument("amount", type=int, help="amount to send, positional")
 
     args = parser.parse_args()
 
@@ -38,6 +42,12 @@ def main():
             teamId=args.teamId, position=args.position
         )
         logger.info(f"Result: {result}")
+        return 0
+
+    if args.command == "send-tus":
+        result = client.sendEth(to=args.to, valueInEth=args.amount)
+        logger.info(f"Result: {result}")
+        return 0
 
 
 main()

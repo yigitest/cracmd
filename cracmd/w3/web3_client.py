@@ -1,10 +1,11 @@
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
-from web3.contract import Contract, ContractFunction
-from web3.types import BlockData, Nonce, TxParams, TxReceipt, TxData
+from web3.contract import ContractFunction
+from web3.types import TxParams, TxReceipt, Wei
 from eth_account.datastructures import SignedTransaction
 from eth_typing.encoding import HexStr
-
+from eth_typing import Address
+from web3.gas_strategies import rpc
 
 from .web3_config import Web3Config
 
@@ -17,8 +18,6 @@ class Web3Client:
         self.USER_PRIVATE_KEY = config.USER_PRIVATE_KEY
 
         self.CHAIN_ID = config.CHAIN_ID
-        self.GAS_LIMIT = config.GAS_LIMIT
-        self.MAX_PRIORITY_FEE_PER_GAS_IN_GWEI = config.MAX_PRIORITY_FEE_PER_GAS_IN_GWEI
 
         self.web3 = Web3(Web3.HTTPProvider(self.RPC_URL))
         self.web3.middleware_onion.inject(geth_poa_middleware, layer=0)
@@ -26,35 +25,32 @@ class Web3Client:
         if not self.web3.isConnected():
             raise Exception("Web3 is not connected!")
 
-    def buildContractTransaction(self, contractFunction: ContractFunction) -> TxParams:
-        """
-        Build a transaction that involves a contract interation.
+    def buildTransactionWithValue(self, to: Address, valueInEth: float) -> TxParams:
+        valueInWei = self.w3.toWei(valueInEth, "ether")
+        return self.buildTransactionWithValueInWei(to, valueInWei)
 
-        Requires passing the contract function as detailed in the docs:
-        https://web3py.readthedocs.io/en/stable/web3.eth.account.html#sign-a-contract-transaction
-        """
+    def buildTransactionWithValueInWei(self, to: Address, valueInWei: Wei) -> TxParams:
+        tx = self.buildBaseTransaction()
+        extraParams: TxParams = {
+            "to": to,
+            "value": valueInWei,
+            "gas": self.estimateGasForTransfer(to, valueInWei),  # type: ignore
+        }
+        return tx | extraParams
+
+    def buildContractTransaction(self, contractFunction: ContractFunction) -> TxParams:
         baseTx = self.buildBaseTransaction()
         return contractFunction.buildTransaction(baseTx)
 
     def buildBaseTransaction(self) -> TxParams:
-        """
-        Build a basic EIP-1559 transaction with just nonce, chain ID and gas;
-        before invoking this method you need to have specified a chainId and
-        called setNodeUri().
-
-        Gas is estimated according to the formula
-        maxMaxFeePerGas = 2 * baseFee + maxPriorityFeePerGas.
-        """
         tx: TxParams = {
-            "type": 0x2,
-            "chainId": self.CHAIN_ID,
-            "gas": self.GAS_LIMIT,  # type: ignore
-            "maxFeePerGas": Web3.toWei(self.estimateMaxFeePerGasInGwei(), "gwei"),
-            "maxPriorityFeePerGas": Web3.toWei(
-                self.MAX_PRIORITY_FEE_PER_GAS_IN_GWEI, "gwei"
-            ),
-            "nonce": self.getNonce(),
+            "type": 1,
+            "chainId": self.chainId,
+            "from": self.userAddress,
         }
+        self.w3.eth.set_gas_price_strategy(rpc.rpc_gas_price_strategy)
+        tx["gasPrice"] = self.w3.eth.generate_gas_price()
+        tx["nonce"] = self.getNonce()
         return tx
 
     def signTransaction(self, tx: TxParams) -> SignedTransaction:
@@ -73,18 +69,6 @@ class Web3Client:
         """
         signedTx = self.signTransaction(tx)
         return self.sendSignedTransaction(signedTx)
-
-    def estimateMaxFeePerGasInGwei(self):
-        """
-        Gets the base fee from the latest block and returns a maxFeePerGas
-        estimate as 2 * baseFee + maxPriorityFeePerGas, as done in the
-        web3 gas_price_strategy middleware (and also here >
-        https://ethereum.stackexchange.com/a/113373/89782)
-        """
-        latest_block = self.web3.eth.get_block("latest")
-        baseFeeInWei = latest_block["baseFeePerGas"]  # in wei
-        baseFeeInGwei = int(Web3.fromWei(baseFeeInWei, "gwei"))
-        return 2 * baseFeeInGwei + self.MAX_PRIORITY_FEE_PER_GAS_IN_GWEI
 
     def getNonce(self):
         return self.web3.eth.get_transaction_count(self.USER_ADDRESS)
