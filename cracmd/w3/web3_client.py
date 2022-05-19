@@ -26,17 +26,31 @@ class Web3Client:
             raise Exception("Web3 is not connected!")
 
     def buildTransactionWithValue(self, to: Address, valueInEth: float) -> TxParams:
-        valueInWei = self.w3.toWei(valueInEth, "ether")
+        valueInWei = self.web3.toWei(valueInEth, "ether")
         return self.buildTransactionWithValueInWei(to, valueInWei)
 
     def buildTransactionWithValueInWei(self, to: Address, valueInWei: Wei) -> TxParams:
         tx = self.buildBaseTransaction()
+        to = Web3.toChecksumAddress(to)
         extraParams: TxParams = {
             "to": to,
             "value": valueInWei,
             "gas": self.estimateGasForTransfer(to, valueInWei),  # type: ignore
         }
         return tx | extraParams
+
+    def estimateGasForTransfer(self, to: Address, valueInWei: Wei) -> int:
+        """
+        Return the gas that would be required to send some ETH
+        (expressed in Wei) to an address
+        """
+        return self.web3.eth.estimate_gas(
+            {
+                "from": self.USER_ADDRESS,
+                "to": to,
+                "value": valueInWei,
+            }
+        )
 
     def buildContractTransaction(self, contractFunction: ContractFunction) -> TxParams:
         baseTx = self.buildBaseTransaction()
@@ -45,11 +59,11 @@ class Web3Client:
     def buildBaseTransaction(self) -> TxParams:
         tx: TxParams = {
             "type": 1,
-            "chainId": self.chainId,
-            "from": self.userAddress,
+            "chainId": self.CHAIN_ID,
+            "from": self.USER_ADDRESS,
         }
-        self.w3.eth.set_gas_price_strategy(rpc.rpc_gas_price_strategy)
-        tx["gasPrice"] = self.w3.eth.generate_gas_price()
+        self.web3.eth.set_gas_price_strategy(rpc.rpc_gas_price_strategy)
+        tx["gasPrice"] = self.web3.eth.generate_gas_price()
         tx["nonce"] = self.getNonce()
         return tx
 
